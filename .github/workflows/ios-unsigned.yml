@@ -26,6 +26,30 @@ jobs:
           if [ ! -f ios/Podfile ]; then
             flutter create --platforms=ios --project-name flutter_cpemanager .
           fi
+      - name: Match the E6888 login handshake
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/api/cpe_client.dart')
+          source = path.read_text(encoding='utf-8')
+          old_init = "    try {\n      await getXml('/html/content.html');\n    } catch (_) {\n      await getXml('/');\n    }\n"
+          old_refresh = "    try {\n      _requestToken = await requestToken();\n    } catch (_) {\n      // Some firmware sends the next token on the challenge response header.\n    }\n"
+          assert source.count(old_init) == 1, 'initial session code changed'
+          assert source.count(old_refresh) == 1, 'challenge token code changed'
+          assert source.count("          '<loginflag>2</loginflag>'\n") == 2
+          source = source.replace(old_init, "    await getXml('/');\n")
+          source = source.replace(old_refresh, '')
+          source = source.replace("          '<loginflag>2</loginflag>'\n", '')
+          path.write_text(source, encoding='utf-8')
+
+          path = Path('lib/main.dart')
+          source = path.read_text(encoding='utf-8')
+          needle = '    refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {\n'
+          assert source.count(needle) == 1, 'refresh timer code changed'
+          source = source.replace(needle, needle + '      if (vendor == CpeVendor.huawei) return;\n')
+          path.write_text(source, encoding='utf-8')
+          PY
       - name: Build without Apple signing credentials
         run: flutter build ios --release --no-codesign
       - name: Package unsigned IPA for signing on Windows
@@ -34,11 +58,11 @@ jobs:
           mkdir -p build/unsigned/Payload
           ditto build/ios/iphoneos/Runner.app build/unsigned/Payload/Runner.app
           cd build/unsigned
-          zip -qry E6888-CPEManager-unsigned.ipa Payload
-          unzip -t E6888-CPEManager-unsigned.ipa
+          zip -qry E6888-CPEManager-fixed-unsigned.ipa Payload
+          unzip -t E6888-CPEManager-fixed-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: E6888-CPEManager-unsigned-ipa
-          path: apps/flutter_cpemanager/build/unsigned/E6888-CPEManager-unsigned.ipa
+          name: E6888-CPEManager-fixed-unsigned-ipa
+          path: apps/flutter_cpemanager/build/unsigned/E6888-CPEManager-fixed-unsigned.ipa
           if-no-files-found: error
           retention-days: 7
