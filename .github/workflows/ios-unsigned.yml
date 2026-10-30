@@ -1,0 +1,44 @@
+name: Build unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/flutter_cpemanager
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.9'
+          channel: stable
+          cache: true
+      - name: Prepare Flutter iOS project
+        run: |
+          flutter pub get
+          if [ ! -f ios/Podfile ]; then
+            flutter create --platforms=ios --project-name flutter_cpemanager .
+          fi
+      - name: Build without Apple signing credentials
+        run: flutter build ios --release --no-codesign
+      - name: Package unsigned IPA for signing on Windows
+        run: |
+          test -f build/ios/iphoneos/Runner.app/Info.plist
+          mkdir -p build/unsigned/Payload
+          ditto build/ios/iphoneos/Runner.app build/unsigned/Payload/Runner.app
+          cd build/unsigned
+          zip -qry E6888-CPEManager-unsigned.ipa Payload
+          unzip -t E6888-CPEManager-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: E6888-CPEManager-unsigned-ipa
+          path: apps/flutter_cpemanager/build/unsigned/E6888-CPEManager-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
